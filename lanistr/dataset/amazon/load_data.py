@@ -146,6 +146,8 @@ class AmazonImageTextTabular(data.Dataset):
       tokenizer: transformers.BertTokenizer,
       transform: torchvision.transforms.Compose,
       feature_names: List[str],
+      image_names: List[str],
+      text_names: List[str],
       text: bool,
       image: bool,
       tab: bool,
@@ -157,7 +159,9 @@ class AmazonImageTextTabular(data.Dataset):
         df: The dataframe to use for the dataset.
         tokenizer: The tokenizer to use for the text.
         transform: The transform to use for the images.
-        feature_names: The names of the features to use.
+        feature_names: The names of the features columns.
+        image_names: The names of the image columns.
+        text_names: The names of the text columns.
         text: Whether to use text.
         image: Whether to use images.
         tab: Whether to use tabular data.
@@ -171,7 +175,10 @@ class AmazonImageTextTabular(data.Dataset):
       self.features = self.df[feature_names].values
 
     if text:
-      self.reviews = df['Review'].values
+      self.texts = df[text_names].values
+
+    if image:
+      self.images = df[image_names].values
 
     self.mask_generator = MaskGenerator(
         input_size=args.image_size,
@@ -199,7 +206,7 @@ class AmazonImageTextTabular(data.Dataset):
 
     # text
     if self.text:
-      review = self.reviews[index]
+      review = self.texts[index]
 
       try:
         item = self.tokenizer.encode_plus(
@@ -227,20 +234,24 @@ class AmazonImageTextTabular(data.Dataset):
 
     # image
     if self.image:
-      image_filename = row['ImageFileName']
-      if isinstance(image_filename, str):
-        image_path = os.path.join(self.args.image_data_dir, image_filename)
-        img = Image.open(image_path).convert('RGB')
-        img = self.transform(img)
-        item['pixel_values'] = img
-        item['bool_masked_pos'] = self.mask_generator()
-      else:
-
-        item['pixel_values'] = torch.zeros(
+      image_pixel_values = []
+      bool_masked_positions = []
+      for image_data in self.images[index]:
+        if isinstance(image_data, str):
+          image_path = os.path.join(self.args.image_data_dir, image_data)
+          img = Image.open(image_path).convert('RGB')
+          img = self.transform(img)
+          image_pixel_values.append(img)
+        else:
+          image_pixel_values.append(torch.zeros(
             size=(3, self.args.image_size, self.args.image_size),
             dtype=torch.float,
-        )
-        item['bool_masked_pos'] = self.mask_generator()
+          ))
+        bool_masked_positions.append(self.mask_generator())
+      item['pixel_values'] = torch.stack(image_pixel_values)
+      item['bool_masked_positions'] = torch.stock(bool_masked_positions)
+      print(f'frankzliu==load_data==AmazonImageTextTabular==__getItem__==pixel_values shape: {item["pixel_values"].size()}')
+      print(f'frankzliu==load_data==AmazonImageTextTabular==__getItem__==bool_masked_positions shape: {item["bool_masked_positions"].size()}')
 
     # tabular
     if self.tab:
